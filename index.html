@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DFA Minimization — Myhill–Nerode Theorem Visualizer</title>
+  <meta name="description"
+    content="Learn DFA minimization step-by-step using the Myhill–Nerode Theorem. Interactive visualizer with detailed explanations." />
+  <link rel="stylesheet" href="style.css?v=3" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+</head>
+
+<body>
+
+  <!-- ═══════════════ HERO ═══════════════ -->
+  <header class="hero">
+    <div class="hero-icon">⚙</div>
+    <h1>DFA Minimization</h1>
+    <p class="tagline">An interactive, step-by-step visualizer powered by<br />the Myhill–Nerode Theorem</p>
+  </header>
+
+  <div class="container">
+
+    <!-- ═══════════════ 1. WHAT IS DFA ═══════════════ -->
+    <section class="section" id="sec-dfa">
+      <div class="section-label"><span class="num">1</span> Foundations</div>
+      <h2>What is a DFA?</h2>
+      <p>
+        A <span class="term">Deterministic Finite Automaton (DFA)</span> is one of the simplest models of computation.
+        Think of it as a machine that reads a string of characters one-by-one and decides — does this string belong to
+        my language?
+      </p>
+      <p>
+        It has a fixed set of <span class="term">states</span>, starts in one state, reads characters,
+        and transitions to a new state for each character. If it ends in an <span class="term">accept state</span>, the
+        string is accepted.
+      </p>
+
+      <div class="kv-grid">
+        <div class="kv-item">
+          <div class="kv-label">Q — States</div>
+          <div class="kv-value">A finite set of states the machine can be in</div>
+        </div>
+        <div class="kv-item">
+          <div class="kv-label">Σ — Alphabet</div>
+          <div class="kv-value">Input symbols the machine reads (e.g. {0, 1})</div>
+        </div>
+        <div class="kv-item">
+          <div class="kv-label">δ — Transitions</div>
+          <div class="kv-value">Given a state + symbol, tells you the next state</div>
+        </div>
+        <div class="kv-item">
+          <div class="kv-label">q₀ — Start State</div>
+          <div class="kv-value">Where the machine begins reading</div>
+        </div>
+        <div class="kv-item">
+          <div class="kv-label">F — Accept States</div>
+          <div class="kv-value">Ending here means the string is accepted</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 2. MINIMIZED DFA ═══════════════ -->
+    <section class="section" id="sec-minimized">
+      <div class="section-label"><span class="num">2</span> Motivation</div>
+      <h2>What is a Minimized DFA?</h2>
+      <p>
+        A DFA can have <span class="term">redundant states</span> — states that behave identically.
+        Two states might accept exactly the same future strings, making one unnecessary.
+      </p>
+      <p>
+        A <span class="term">Minimized DFA</span> is the smallest DFA that recognizes the <em>exact same language</em>.
+        No redundant states. Every state is unique. It's the <span class="term">canonical representation</span> — two
+        DFAs
+        accept the same language if and only if their minimized forms are identical.
+      </p>
+
+      <div class="highlight-box">
+        <strong>Key idea:</strong> If two states respond to every possible future input in the exact same way,
+        they are <em>equivalent</em> and can be merged into one.
+      </div>
+    </section>
+
+    <!-- ═══════════════ 3. THEOREM ═══════════════ -->
+    <section class="section" id="sec-theorem">
+      <div class="section-label"><span class="num">3</span> The Theory</div>
+      <h2>Myhill–Nerode Theorem</h2>
+      <p>
+        This theorem gives us a precise way to determine which states are equivalent.
+        It defines an equivalence relation:
+      </p>
+
+      <div class="theorem-card">
+        <h3>📐 Theorem Statement</h3>
+        <p style="color:var(--text); font-size:15px; line-height:1.85;">
+          Two states <span class="term">p</span> and <span class="term">q</span> are <em>Myhill–Nerode equivalent</em>
+          (p ≡ q) if and only if for <strong>every</strong> suffix string w:
+        </p>
+        <div class="formal">
+          p ≡ q &nbsp;⟺&nbsp; ∀w ∈ Σ* : δ*(p, w) ∈ F ↔ δ*(q, w) ∈ F
+        </div>
+        <p style="color:var(--text-mid); font-size:14.5px; line-height:1.8;">
+          <strong style="color:var(--text)">In plain English:</strong> states p and q are equivalent if no string can
+          tell them apart.
+          No matter what you append, both states agree — they either both accept or both reject.
+          If even one string distinguishes them, they must remain separate states.
+        </p>
+      </div>
+
+      <h3 style="font-size:18px; font-weight:700; margin-top:40px; margin-bottom:8px; color:var(--text);">Algorithm
+        Steps — Table-Filling Method</h3>
+      <p style="color:var(--text-mid)">We use the <span class="term">Table-Filling Algorithm</span> to systematically
+        find all distinguishable pairs:</p>
+      <ol class="steps-list">
+        <li><span><strong style="color:var(--text)">Remove unreachable states</strong> — Discard any state that can
+            never be reached from the start state.</span></li>
+        <li><span><strong style="color:var(--text)">Base case (ε-distinguishability)</strong> — Mark every pair (p, q)
+            where one is accept and the other is not. They're distinguished by the empty string ε.</span></li>
+        <li><span><strong style="color:var(--text)">Propagation</strong> — For each unmarked pair (p, q), check each
+            symbol a. If (δ(p,a), δ(q,a)) is already marked, mark (p, q) too. Repeat until stable.</span></li>
+        <li><span><strong style="color:var(--text)">Equivalence classes</strong> — Unmarked pairs are equivalent. Group
+            states into classes — each class = one state in the minimized DFA.</span></li>
+        <li><span><strong style="color:var(--text)">Build minimized DFA</strong> — Create a new DFA whose states are the
+            equivalence classes. Define transitions between classes. Done!</span></li>
+      </ol>
+    </section>
+
+    <!-- ═══════════════ 4. EXAMPLE ═══════════════ -->
+    <section class="section" id="sec-example">
+      <div class="section-label"><span class="num">4</span> Example</div>
+      <h2>Example DFA</h2>
+      <p>
+        Below is a DFA with <span class="term" id="example-state-count">6 states</span>.
+        Some states behave identically and can be merged. Let's minimize it.
+      </p>
+
+      <div class="graph-container" style="margin-top:24px;">
+        <div class="graph-label">Original DFA</div>
+        <div id="graph-original" style="width:100%; height:400px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div
+          style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--gold); margin-bottom:14px;">
+          Transition Table δ</div>
+        <div id="transition-table-wrap"></div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btn-start">
+          <span>▶</span> Start Minimization
+        </button>
+        <button class="btn btn-secondary" id="btn-skip">
+          ⏩ Skip to Final Minimized DFA
+        </button>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 5. WALKTHROUGH ═══════════════ -->
+    <section class="section" id="walkthrough-section">
+      <div class="section-label"><span class="num">5</span> Walkthrough</div>
+      <h2>Step-by-Step Minimization</h2>
+      <p style="margin-bottom:28px; color:var(--text-mid)">Follow each step of the algorithm. The box below explains
+        what's happening in plain English.</p>
+
+      <div class="step-progress-bar" id="step-progress-bar"></div>
+      <div id="step-content"></div>
+
+      <div class="step-nav">
+        <button class="btn btn-secondary btn-sm" id="btn-prev" disabled>← Previous Step</button>
+        <span class="step-counter" id="step-counter">— / —</span>
+        <button class="btn btn-primary btn-sm" id="btn-next" disabled>Next Step →</button>
+      </div>
+    </section>
+
+    <!-- ═══════════════ 6. FINAL RESULT ═══════════════ -->
+    <section class="section" id="final-section">
+      <div class="section-label"><span class="num">6</span> Result</div>
+      <h2>Minimized DFA</h2>
+      <p style="color:var(--text-mid)">The minimized DFA compared with the original. Equivalent states have been merged.
+      </p>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-orig">–</div>
+          <div class="stat-label">Original</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-min">–</div>
+          <div class="stat-label">Minimized</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-classes">–</div>
+          <div class="stat-label">Classes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-reduction">–</div>
+          <div class="stat-label">Reduction</div>
+        </div>
+      </div>
+
+      <div class="result-grid">
+        <div class="graph-container">
+          <div class="graph-label">Original DFA</div>
+          <div id="graph-orig-final" style="width:100%; height:360px;"></div>
+        </div>
+        <div class="graph-container">
+          <div class="graph-label">Minimized DFA</div>
+          <div id="graph-minimal" style="width:100%; height:360px;"></div>
+        </div>
+      </div>
+
+      <div class="card card-gold" style="margin-top:20px;">
+        <div
+          style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--gold); margin-bottom:12px;">
+          Equivalence Classes</div>
+        <div id="eq-classes-display" class="partition-list"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <div
+          style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:var(--gold); margin-bottom:14px;">
+          Minimized DFA — Transition Table δ'</div>
+        <div id="min-transition-table-wrap"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="dfa.js?v=3"></script>
+  <script src="visualizer.js?v=3"></script>
+  <script src="ui.js?v=3"></script>
+</body>
+
+</html>
