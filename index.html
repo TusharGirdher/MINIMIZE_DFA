@@ -7,7 +7,7 @@
   <title>DFA Minimization — Myhill–Nerode Theorem Visualizer</title>
   <meta name="description"
     content="Learn DFA minimization step-by-step using the Myhill–Nerode Theorem. Interactive visualizer with detailed explanations." />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=5" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 </head>
 
@@ -134,6 +134,7 @@
         Below is a DFA with <span class="term" id="example-state-count">6 states</span>.
         Some states behave identically and can be merged. Let's minimize it.
       </p>
+      <p class="example-name" id="example-dfa-name"></p>
 
       <div class="graph-container" style="margin-top:24px;">
         <div class="graph-label">Original DFA</div>
@@ -147,12 +148,30 @@
         <div id="transition-table-wrap"></div>
       </div>
 
+      <!-- Speed Slider -->
+      <div class="speed-control" id="speed-control">
+        <div class="speed-label-row">
+          <span class="speed-title">🎚 Animation Speed</span>
+          <span class="speed-value" id="speed-label">Medium</span>
+        </div>
+        <div class="slider-track">
+          <input type="range" id="speed-slider" min="1" max="5" value="3" step="1" />
+          <div class="slider-labels">
+            <span>Detailed</span>
+            <span>Fast</span>
+          </div>
+        </div>
+      </div>
+
       <div class="btn-group">
         <button class="btn btn-primary" id="btn-start">
           <span>▶</span> Start Minimization
         </button>
         <button class="btn btn-secondary" id="btn-skip">
           ⏩ Skip to Final Minimized DFA
+        </button>
+        <button class="btn btn-accent" id="btn-another">
+          🔄 Try Another DFA
         </button>
       </div>
     </section>
@@ -161,16 +180,14 @@
     <section class="section" id="walkthrough-section">
       <div class="section-label"><span class="num">5</span> Walkthrough</div>
       <h2>Step-by-Step Minimization</h2>
-      <p style="margin-bottom:28px; color:var(--text-mid)">Follow each step of the algorithm. The box below explains
-        what's happening in plain English.</p>
+      <p style="margin-bottom:28px; color:var(--text-mid)">Watch the algorithm work through each step automatically. The
+        table fills cell-by-cell, showing every comparison.</p>
 
       <div class="step-progress-bar" id="step-progress-bar"></div>
       <div id="step-content"></div>
 
-      <div class="step-nav">
-        <button class="btn btn-secondary btn-sm" id="btn-prev" disabled>← Previous Step</button>
+      <div class="step-status">
         <span class="step-counter" id="step-counter">— / —</span>
-        <button class="btn btn-primary btn-sm" id="btn-next" disabled>Next Step →</button>
       </div>
     </section>
 
@@ -224,13 +241,19 @@
           Minimized DFA — Transition Table δ'</div>
         <div id="min-transition-table-wrap"></div>
       </div>
+
+      <div class="btn-group" style="margin-top:32px; justify-content:center;">
+        <button class="btn btn-accent" onclick="ui._loadNextExample()">
+          🔄 Try Another DFA
+        </button>
+      </div>
     </section>
 
   </div>
 
-  <script src="dfa.js?v=3"></script>
-  <script src="visualizer.js?v=3"></script>
-  <script src="ui.js?v=3"></script>
+  <script src="dfa.js?v=5"></script>
+  <script src="visualizer.js?v=5"></script>
+  <script src="ui.js?v=5"></script>
 </body>
 
 </html>

@@ -1,7 +1,6 @@
 /**
- * UI Controller — Manages the linear educational flow:
- * Load example → Show original DFA → Start Minimization (step-by-step) → Final result
- * Also supports "Skip to Final" button.
+ * UI Controller — Auto-playing minimization with speed slider,
+ * cell-by-cell comparison highlighting, and multiple DFA examples.
  */
 
 class UIController {
@@ -10,31 +9,71 @@ class UIController {
     this.engineResult = null;
     this.currentStep = 0;
     this.totalSteps = 0;
-    this.displaySteps = [];   // our processed steps for display
+    this.displaySteps = [];
     this.vizOriginal = new DFAVisualizer('graph-original');
     this.vizOrigFinal = new DFAVisualizer('graph-orig-final');
     this.vizMinimal = new DFAVisualizer('graph-minimal');
+
+    // Animation state
+    this.animationTimer = null;
+    this.isPlaying = false;
+    this.animationSpeed = 1500; // ms per step (default medium)
+    this.subStepQueue = [];     // queue of micro-steps for cell-by-cell fill
+    this.subStepTimer = null;
+
+    // Example cycling
+    this.exampleKeys = Object.keys(EXAMPLE_DFAS);
+    this.currentExampleIndex = this.exampleKeys.indexOf('textbook');
+    if (this.currentExampleIndex < 0) this.currentExampleIndex = 0;
+
     this._init();
   }
 
   _init() {
-    // Load default example on page load
-    this._loadExample('textbook');
+    this._loadExample(this.exampleKeys[this.currentExampleIndex]);
 
     // Button bindings
     document.getElementById('btn-start').addEventListener('click', () => this._startMinimization());
     document.getElementById('btn-skip').addEventListener('click', () => this._skipToFinal());
-    document.getElementById('btn-prev').addEventListener('click', () => this._changeStep(-1));
-    document.getElementById('btn-next').addEventListener('click', () => this._changeStep(1));
+    document.getElementById('btn-another').addEventListener('click', () => this._loadNextExample());
+
+    // Speed slider
+    const slider = document.getElementById('speed-slider');
+    if (slider) {
+      slider.addEventListener('input', (e) => this._onSpeedChange(e.target.value));
+      this._onSpeedChange(slider.value);
+    }
+  }
+
+  _onSpeedChange(val) {
+    // val: 1 (slowest) to 5 (fastest)
+    const v = parseInt(val);
+    const speeds = {
+      1: 3000,  // slowest — every detail
+      2: 2000,
+      3: 1200,
+      4: 700,
+      5: 300    // fastest
+    };
+    this.animationSpeed = speeds[v] || 1200;
+
+    // Update label
+    const labels = { 1: 'Slowest — Every Detail', 2: 'Slow', 3: 'Medium', 4: 'Fast', 5: 'Fastest' };
+    const lbl = document.getElementById('speed-label');
+    if (lbl) lbl.textContent = labels[v] || 'Medium';
   }
 
   _loadExample(key) {
     const dfa = EXAMPLE_DFAS[key];
     if (!dfa) return;
 
+    // Stop any running animation
+    this._stopAnimation();
+
     this.currentDFA = { ...dfa };
     this.engineResult = null;
     document.getElementById('example-state-count').textContent = `${dfa.states.length} states`;
+    document.getElementById('example-dfa-name').textContent = dfa.name;
 
     // Render original DFA graph
     this.vizOriginal.render(dfa);
@@ -45,6 +84,21 @@ class UIController {
     // Hide walkthrough and final sections
     document.getElementById('walkthrough-section').classList.remove('visible');
     document.getElementById('final-section').classList.remove('visible');
+
+    // Reset buttons
+    const startBtn = document.getElementById('btn-start');
+    startBtn.innerHTML = '<span>▶</span> Start Minimization';
+    startBtn.disabled = false;
+  }
+
+  _loadNextExample() {
+    this.currentExampleIndex = (this.currentExampleIndex + 1) % this.exampleKeys.length;
+    this._loadExample(this.exampleKeys[this.currentExampleIndex]);
+
+    // Scroll to example section
+    setTimeout(() => {
+      document.getElementById('sec-example').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
   }
 
   _renderTransitionTable(dfa) {
@@ -80,7 +134,7 @@ class UIController {
   }
 
   /* ─────────────────────────────────────────────────────────
-     START MINIMIZATION — step-by-step flow
+     START MINIMIZATION — auto-playing animation
      ───────────────────────────────────────────────────────── */
   _startMinimization() {
     if (!this.currentDFA) return;
@@ -89,21 +143,142 @@ class UIController {
     const engine = new DFAEngine(this.currentDFA);
     this.engineResult = engine.minimize();
 
-    // Build display steps from engine data
+    // Build display steps
     this._buildDisplaySteps();
 
     // Show walkthrough section
     const ws = document.getElementById('walkthrough-section');
     ws.classList.add('visible');
 
-    // Hide final section (in case re-running)
+    // Hide final section
     document.getElementById('final-section').classList.remove('visible');
 
-    // Render progress bar and show step 1
+    // Render progress bar
     this._renderProgressBar();
-    this._showStep(0);
 
-    setTimeout(() => ws.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    // Disable start button during animation
+    const startBtn = document.getElementById('btn-start');
+    startBtn.innerHTML = '<span>⏸</span> Playing...';
+    startBtn.disabled = true;
+
+    // Start auto-play from step 0
+    this.currentStep = -1;
+    this.isPlaying = true;
+
+    setTimeout(() => {
+      ws.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => this._playNextStep(), 600);
+    }, 100);
+  }
+
+  _stopAnimation() {
+    this.isPlaying = false;
+    if (this.animationTimer) {
+      clearTimeout(this.animationTimer);
+      this.animationTimer = null;
+    }
+    if (this.subStepTimer) {
+      clearTimeout(this.subStepTimer);
+      this.subStepTimer = null;
+    }
+    this.subStepQueue = [];
+  }
+
+  _playNextStep() {
+    if (!this.isPlaying) return;
+
+    const nextIdx = this.currentStep + 1;
+    if (nextIdx >= this.totalSteps) {
+      // Finished all steps → show final result
+      this.isPlaying = false;
+      const startBtn = document.getElementById('btn-start');
+      startBtn.innerHTML = '<span>▶</span> Start Minimization';
+      startBtn.disabled = false;
+
+      this._renderFinal();
+      document.getElementById('final-section').classList.add('visible');
+      setTimeout(() => {
+        document.getElementById('final-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+      return;
+    }
+
+    this._showStep(nextIdx);
+
+    const step = this.displaySteps[nextIdx];
+
+    // For base/propagation steps, do cell-by-cell animation
+    if ((step.type === 'base' || step.type === 'propagation') && step._cellSteps && step._cellSteps.length > 0) {
+      this._playCellAnimation(step, () => {
+        // After cell animation, wait then advance
+        this.animationTimer = setTimeout(() => this._playNextStep(), this.animationSpeed);
+      });
+    } else {
+      // Simple step — wait and advance
+      this.animationTimer = setTimeout(() => this._playNextStep(), this.animationSpeed);
+    }
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     CELL-BY-CELL ANIMATION for pair table
+     ───────────────────────────────────────────────────────── */
+  _playCellAnimation(step, onComplete) {
+    const cellSteps = step._cellSteps;
+    let idx = 0;
+
+    // Determine sub-step delay based on speed
+    const slider = document.getElementById('speed-slider');
+    const speedVal = slider ? parseInt(slider.value) : 3;
+    const subDelay = speedVal <= 2 ? Math.max(400, this.animationSpeed / 3) : Math.max(150, this.animationSpeed / 4);
+
+    const playNext = () => {
+      if (!this.isPlaying || idx >= cellSteps.length) {
+        onComplete();
+        return;
+      }
+
+      const cs = cellSteps[idx];
+      idx++;
+
+      // Highlight the cell being compared
+      const cellEl = document.getElementById(cs.cellId);
+      if (cellEl) {
+        // Remove previous comparing highlights
+        document.querySelectorAll('.pair-table td.comparing').forEach(el => el.classList.remove('comparing'));
+
+        if (cs.action === 'compare') {
+          cellEl.classList.add('comparing');
+
+          // Show comparison info
+          const infoEl = document.getElementById('comparison-info');
+          if (infoEl && cs.info) {
+            infoEl.innerHTML = `<span class="compare-arrow">⟶</span> ${cs.info}`;
+            infoEl.classList.add('visible');
+          }
+        } else if (cs.action === 'mark') {
+          cellEl.classList.remove('comparing');
+          cellEl.classList.add('just-marked');
+          cellEl.textContent = '×';
+
+          const infoEl = document.getElementById('comparison-info');
+          if (infoEl && cs.info) {
+            infoEl.innerHTML = `<span class="compare-check">✗</span> ${cs.info}`;
+          }
+        } else if (cs.action === 'skip') {
+          cellEl.classList.add('comparing');
+          setTimeout(() => cellEl.classList.remove('comparing'), subDelay * 0.7);
+
+          const infoEl = document.getElementById('comparison-info');
+          if (infoEl && cs.info) {
+            infoEl.innerHTML = `<span class="compare-check">✓</span> ${cs.info}`;
+          }
+        }
+      }
+
+      this.subStepTimer = setTimeout(playNext, subDelay);
+    };
+
+    playNext();
   }
 
   /* ─────────────────────────────────────────────────────────
@@ -111,8 +286,8 @@ class UIController {
      ───────────────────────────────────────────────────────── */
   _skipToFinal() {
     if (!this.currentDFA) return;
+    this._stopAnimation();
 
-    // Run engine if not already done
     if (!this.engineResult) {
       const engine = new DFAEngine(this.currentDFA);
       this.engineResult = engine.minimize();
@@ -122,6 +297,11 @@ class UIController {
     // Hide walkthrough
     document.getElementById('walkthrough-section').classList.remove('visible');
 
+    // Reset start button
+    const startBtn = document.getElementById('btn-start');
+    startBtn.innerHTML = '<span>▶</span> Start Minimization';
+    startBtn.disabled = false;
+
     // Show final
     this._renderFinal();
     const fs = document.getElementById('final-section');
@@ -130,16 +310,16 @@ class UIController {
   }
 
   /* ─────────────────────────────────────────────────────────
-     BUILD DISPLAY STEPS from engine result
+     BUILD DISPLAY STEPS — with micro-steps for cell animation
      ───────────────────────────────────────────────────────── */
   _buildDisplaySteps() {
     const r = this.engineResult;
-    const engineSteps = r.steps; // array of {phase, ...}
-    const mt = r.markedTable;    // { "a,b": {marked, iteration, reason, ...}, ... }
+    const engineSteps = r.steps;
+    const mt = r.markedTable;
     const ws = r.workingStates;
     this.displaySteps = [];
 
-    // Step 1: Reachability (from engine phase 'reachability')
+    // Step 1: Reachability
     const reachStep = engineSteps.find(s => s.phase === 'reachability');
     this.displaySteps.push({
       title: 'Remove Unreachable States',
@@ -154,12 +334,43 @@ class UIController {
       type: 'reachability',
     });
 
-    // Step 2: Base case (from engine phase 'base')
+    // Step 2: Base case — build cell-by-cell micro-steps
     const baseStep = engineSteps.find(s => s.phase === 'base');
     const basePairNames = (baseStep.markedPairs || []).map(k => {
       const parts = k.split(',');
       return `(${parts[0]}, ${parts[1]})`;
     });
+
+    // Build cell steps for base case
+    const baseCellSteps = [];
+    for (let j = 1; j < ws.length; j++) {
+      for (let i = 0; i < j; i++) {
+        const a = ws[i], b = ws[j];
+        const key = a < b ? `${a},${b}` : `${b},${a}`;
+        const cellId = `cell-base-${i}-${j}`;
+        const entry = mt[key];
+
+        if (entry && entry.marked && entry.iteration === 0) {
+          baseCellSteps.push({
+            cellId,
+            action: 'compare',
+            info: `Comparing (${a}, ${b}): one is accept, the other is not`,
+          });
+          baseCellSteps.push({
+            cellId,
+            action: 'mark',
+            info: `Marked (${a}, ${b}) — distinguished by ε (empty string)`,
+          });
+        } else {
+          baseCellSteps.push({
+            cellId,
+            action: 'skip',
+            info: `(${a}, ${b}): both same type — not yet distinguishable`,
+          });
+        }
+      }
+    }
+
     this.displaySteps.push({
       title: 'Base Case — ε-Distinguishability',
       explanation:
@@ -171,9 +382,10 @@ class UIController {
           : `No pairs marked at base case.`),
       type: 'base',
       markedUpTo: 0,
+      _cellSteps: baseCellSteps,
     });
 
-    // Step 3+: Propagation rounds (from engine phase 'propagation')
+    // Step 3+: Propagation rounds
     const propStep = engineSteps.find(s => s.phase === 'propagation');
     if (propStep && propStep.iterations) {
       propStep.iterations.forEach((iter, idx) => {
@@ -182,11 +394,57 @@ class UIController {
           return `(${parts[0]}, ${parts[1]})`;
         });
 
-        // Get the symbols that caused each marking
         const details = iter.newlyMarked.map(k => {
           const entry = mt[k];
           return entry ? entry.reason : '';
         });
+
+        // Build cell steps for propagation
+        const propCellSteps = [];
+        for (let j = 1; j < ws.length; j++) {
+          for (let i = 0; i < j; i++) {
+            const a = ws[i], b = ws[j];
+            const key = a < b ? `${a},${b}` : `${b},${a}`;
+            const cellId = `cell-prop${idx}-${i}-${j}`;
+            const entry = mt[key];
+
+            // Already marked in a previous step?
+            if (entry && entry.marked && entry.iteration < iter.iteration) {
+              continue; // skip already marked, they show with ×
+            }
+            // Newly marked in this iteration?
+            if (iter.newlyMarked.includes(key)) {
+              // Show what we're checking
+              for (const sym of this.currentDFA.alphabet) {
+                const dp = this.currentDFA.transitions[a] ? this.currentDFA.transitions[a][sym] : null;
+                const dq = this.currentDFA.transitions[b] ? this.currentDFA.transitions[b][sym] : null;
+                if (dp && dq && dp !== dq) {
+                  const transKey = dp < dq ? `${dp},${dq}` : `${dq},${dp}`;
+                  if (mt[transKey] && mt[transKey].marked && mt[transKey].iteration < iter.iteration) {
+                    propCellSteps.push({
+                      cellId,
+                      action: 'compare',
+                      info: `Checking (${a}, ${b}) on symbol '${sym}': δ(${a},'${sym}')=${dp}, δ(${b},'${sym}')=${dq} → pair (${dp},${dq}) is already marked`,
+                    });
+                    propCellSteps.push({
+                      cellId,
+                      action: 'mark',
+                      info: `Marked (${a}, ${b}) — distinguished via symbol '${sym}'`,
+                    });
+                    break;
+                  }
+                }
+              }
+            } else if (!entry.marked) {
+              // Unmarked — show checking briefly
+              propCellSteps.push({
+                cellId,
+                action: 'skip',
+                info: `(${a}, ${b}): transitions don't lead to any marked pair — still equivalent`,
+              });
+            }
+          }
+        }
 
         this.displaySteps.push({
           title: `Propagation — Round ${idx + 1}`,
@@ -201,6 +459,7 @@ class UIController {
           iteration: iter.iteration,
           newlyMarkedKeys: iter.newlyMarked,
           details: details,
+          _cellSteps: propCellSteps,
         });
       });
     }
@@ -243,7 +502,7 @@ class UIController {
     let html = '';
     for (let i = 0; i < this.totalSteps; i++) {
       html += `<div class="step-pip">`;
-      html += `<div class="dot" id="pip-${i}" onclick="ui._showStep(${i})">${i + 1}</div>`;
+      html += `<div class="dot" id="pip-${i}">${i + 1}</div>`;
       if (i < this.totalSteps - 1) html += `<div class="connector" id="conn-${i}"></div>`;
       html += `</div>`;
     }
@@ -278,17 +537,6 @@ class UIController {
 
     // Update counter
     document.getElementById('step-counter').textContent = `Step ${idx + 1} of ${this.totalSteps}`;
-
-    // Update nav buttons
-    document.getElementById('btn-prev').disabled = idx === 0;
-    const nextBtn = document.getElementById('btn-next');
-    if (idx === this.totalSteps - 1) {
-      nextBtn.textContent = 'View Final Result →';
-      nextBtn.disabled = false;
-    } else {
-      nextBtn.textContent = 'Next Step →';
-      nextBtn.disabled = false;
-    }
   }
 
   /* ─────────────────────────────────────────────────────────
@@ -326,7 +574,10 @@ class UIController {
 
     // ─── Base / Propagation: pair table ───
     if (step.type === 'base' || step.type === 'propagation') {
-      html += this._renderPairTableHTML(step);
+      html += this._renderPairTableHTML(step, idx);
+
+      // Info box for live comparison
+      html += `<div class="comparison-info-box" id="comparison-info"></div>`;
 
       // Show details for propagation
       if (step.type === 'propagation' && step.details && step.details.length > 0) {
@@ -365,16 +616,13 @@ class UIController {
   }
 
   /* ─────────────────────────────────────────────────────────
-     PAIR TABLE RENDERING
-     Uses engine's markedTable which has comma-separated keys
-     and {marked, iteration} objects.
+     PAIR TABLE RENDERING — with unique cell IDs for animation
      ───────────────────────────────────────────────────────── */
-  _renderPairTableHTML(step) {
+  _renderPairTableHTML(step, stepIdx) {
     const ws = this.engineResult.workingStates;
     const mt = this.engineResult.markedTable;
     if (ws.length < 2) return '';
 
-    // Determine the max iteration to show
     let maxIter = 0;
     if (step.type === 'base') {
       maxIter = 0;
@@ -385,13 +633,15 @@ class UIController {
     // Determine which keys were newly marked this step
     const newlyMarkedSet = new Set();
     if (step.type === 'base') {
-      // All iteration-0 marks are "new"
       for (const key in mt) {
         if (mt[key].marked && mt[key].iteration === 0) newlyMarkedSet.add(key);
       }
     } else if (step.type === 'propagation' && step.newlyMarkedKeys) {
       step.newlyMarkedKeys.forEach(k => newlyMarkedSet.add(k));
     }
+
+    // Prefix for cell IDs
+    const prefix = step.type === 'base' ? 'cell-base' : `cell-prop${this.displaySteps.indexOf(step) - 2}`;
 
     let html = '<div style="overflow-x:auto; margin-top:16px;"><table class="pair-table"><tr><th></th>';
     for (let i = 0; i < ws.length - 1; i++) html += `<th>${ws[i]}</th>`;
@@ -404,46 +654,27 @@ class UIController {
           html += '<td class="empty-cell"></td>';
           continue;
         }
-        // Engine uses comma-separated, sorted keys
         const a = ws[i], b = ws[j];
         const key = a < b ? `${a},${b}` : `${b},${a}`;
+        const cellId = `${prefix}-${i}-${j}`;
         const entry = mt[key];
 
         if (entry && entry.marked && entry.iteration <= maxIter) {
           const isNew = newlyMarkedSet.has(key);
-          html += `<td class="${isNew ? 'just-marked' : 'marked'}">×</td>`;
-        } else if (entry && !entry.marked) {
-          // Still unmarked at this point
-          html += '<td>—</td>';
+          // For animation: newly marked cells start empty, will be filled by animation
+          if (isNew && step._cellSteps && step._cellSteps.length > 0) {
+            html += `<td id="${cellId}" class="pending-cell">—</td>`;
+          } else {
+            html += `<td id="${cellId}" class="${isNew ? 'just-marked' : 'marked'}">×</td>`;
+          }
         } else {
-          html += '<td>—</td>';
+          html += `<td id="${cellId}">—</td>`;
         }
       }
       html += '</tr>';
     }
     html += '</table></div>';
     return html;
-  }
-
-  /* ─────────────────────────────────────────────────────────
-     STEP NAVIGATION
-     ───────────────────────────────────────────────────────── */
-  _changeStep(delta) {
-    const next = this.currentStep + delta;
-    if (next >= this.totalSteps) {
-      // Past last step → show final result
-      this._renderFinal();
-      document.getElementById('final-section').classList.add('visible');
-      setTimeout(() => {
-        document.getElementById('final-section').scrollIntoView({
-          behavior: 'smooth', block: 'start',
-        });
-      }, 100);
-      return;
-    }
-    if (next >= 0 && next < this.totalSteps) {
-      this._showStep(next);
-    }
   }
 
   /* ─────────────────────────────────────────────────────────
